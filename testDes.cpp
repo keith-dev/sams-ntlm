@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <string>
 #include <vector>
+#include <fstream>
 #include <iostream>
 #include <iomanip>
 
@@ -13,12 +14,16 @@ void set_password(const std::string& in, unsigned char* out, size_t outsz);
 bool des_create1(const unsigned char* part, size_t partsz, unsigned char* out, size_t outsz);
 bool des_create2(const unsigned char* part, size_t partsz, unsigned char* out, size_t outsz);
 
+void save(const unsigned char* buf, size_t bufsz, const char* filename);
+void save(const unsigned char* buf, size_t bufsz, const std::string& filename);
+
 int main(void)
 {
 	unsigned char passwd[2 * 7];
 	set_password("secret01", passwd, 7);
 
-	const unsigned char lmstr = { 0x4b, 0x47, 0x53, 0x21, 0x40, 0x23, 0x24, 0x25 };
+	const unsigned char lmstr[] = { 0x4b, 0x47, 0x53, 0x21, 0x40, 0x23, 0x24, 0x25 };
+	save(lmstr, sizeof(lmstr), "LMstr.bin");
 
 	unsigned char out[2 * 8];
 	bool ok;
@@ -50,6 +55,11 @@ int main(void)
 			std::cout << std::hex << std::setw(2) << std::setfill('0') << (unsigned)out[i] << " ";
 		std::cout << "}\n" << std::endl;
 	}
+
+	save(out, 8, "key1.bin");
+	save(out + 8, 8, "key2.bin");
+	system("openssl enc -e -des-cbc -in LMstr.bin -pass file:key1.bin -out out1.bin");
+	system("openssl enc -e -des-cbc -in LMstr.bin -pass file:key2.bin -out out2.bin");
 }
 
 void set_password(const char* in, unsigned char* out, size_t outsz)
@@ -185,4 +195,15 @@ bool des_create2(const unsigned char* in, size_t insz, unsigned char* out, size_
 	from_vec(key, out, outsz);
 
 	return true;
+}
+
+void save(const unsigned char* buf, size_t bufsz, const char* filename)
+{
+	std::ofstream f(filename, std::ios::binary | std::ios::trunc);
+	f.write((const char*)buf, bufsz);
+}
+
+void save(const unsigned char* buf, size_t bufsz, const std::string& filename)
+{
+	save(buf, bufsz, filename.c_str());
 }
