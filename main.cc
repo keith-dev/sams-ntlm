@@ -13,6 +13,13 @@
 #include <stdio.h>
 #include <assert.h>
 
+//---------------------------------------------------------------------------
+//
+void LM_Response(
+		const char* password,
+		const unsigned char* challenge, size_t challengesz,
+		unsigned char* response, size_t responsesz);
+
 std::ostream& log(const char* name, const unsigned char* buf, size_t bufsz);
 
 void set_password(const char* in, unsigned char* out, size_t outsz);
@@ -29,41 +36,87 @@ void des_encrypt(
 		const unsigned char* key,   size_t keysz, 
 		      unsigned char* out,   size_t outsz);
 
+//---------------------------------------------------------------------------
+//
 int main(int argc, char* argv[])
 {
 	const char* password = (argc == 1) ? "secret01" : (const char*)argv[1];
-	const unsigned char key[] = { 0x4b, 0x47, 0x53, 0x21, 0x40, 0x23, 0x24, 0x25 };
-	log("key", key, sizeof(key));
+	const unsigned char challenge[] = { 0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef };
+	unsigned char response[3 * 8] = {};
+	LM_Response(password, challenge, sizeof(challenge), response, sizeof(response));
+}
 
+//---------------------------------------------------------------------------
+//
+void LM_Response(
+		const char* password,
+		const unsigned char* challenge, size_t challengesz,
+		unsigned char* response, size_t responsesz)
+{
+	assert(password);
+	assert(challenge);	assert(challengesz == 8);
+	assert(response);	assert(responsesz == 3*8);
+
+	// 1. The user's password (as an OEM string) is converted to uppercase.
+	// 2. This password is null-padded to 14 bytes.
+	// 3. This "fixed" password is split into two 7-byte halves.
 	unsigned char passwd[2 * 7];
 	set_password(password, passwd, sizeof(passwd));
-	log("passwd", passwd, sizeof(passwd));
+	log("passwd", passwd, sizeof(passwd)) << std::endl;
 
-	unsigned char plain[2 * 8];
-	des_create(passwd, 7,     plain,     8);
-	des_create(passwd + 7, 7, plain + 8, 8);
-	log("plain", plain, sizeof(plain));
+	// 4. These values are used to create two DES keys (one from each 7-byte half).
+	unsigned char destwo8[2 * 8] = {};
+	des_create(passwd, 7,     destwo8,     8);
+	des_create(passwd + 7, 7, destwo8 + 8, 8);
+	log("destwo8 1", destwo8, 8);
+	log("destwo8 2", destwo8 + 8, 8) << std::endl;
 
-	unsigned char cipher[2 * 8];
-	des_encrypt(plain,     8, key, 8, cipher,     8);
-	des_encrypt(plain + 8, 8, key, 8, cipher + 8, 8);
-	log("cipher", plain, sizeof(plain));
+	// 5. Each of these keys is used to DES-encrypt the constant ASCII string "KGS!@#$%" (resulting in two 8-byte ciphertext values).
+	// 6. These two ciphertext values are concatenated to form a 16-byte value - the LM hash.
+	// 7. The 16-byte LM hash is null-padded to 21 bytes.
+	// 8. This value is split into three 7-byte thirds.
+	// 9. These values are used to create three DES keys (one from each 7-byte third).
+	const unsigned char key[] = { 0x4b, 0x47, 0x53, 0x21, 0x40, 0x23, 0x24, 0x25 };
+	log("key", key, sizeof(key)) << std::endl;
 
-	save(key, 8,        "key.bin");
-	save(plain, 8,      "plain1.bin");
-	save(plain + 8, 8,  "plain2.bin");
-	save(cipher, 8,     "cipher1.bin");
-	save(cipher + 8, 8, "cipher2.bin");
+	unsigned char desthree7[21] = {};
+	des_encrypt(key, 8, destwo8,     8, desthree7,     8);
+	des_encrypt(key, 8, destwo8 + 8, 8, desthree7 + 8, 8);
+	log("desthree7 1", desthree7 + 0*7, 7);
+	log("desthree7 2", desthree7 + 1*7, 7);
+	log("desthree7 3", desthree7 + 2*7, 7) << std::endl;
+
+	unsigned char desthree8[3 * 8] = {};
+	des_create(desthree7 + 0*7, 7, desthree8 + 0*8, 8);
+	des_create(desthree7 + 1*7, 7, desthree8 + 1*8, 8);
+	des_create(desthree7 + 2*7, 7, desthree8 + 2*8, 8);
+	log("desthree8 1", desthree8 + 0*8, 8);
+	log("desthree8 2", desthree8 + 1*8, 8);
+	log("desthree8 3", desthree8 + 2*8, 8) << std::endl;
+
+	// 10. Each of these keys is used to DES-encrypt the challenge from the Type 2 message (resulting in three 8-byte ciphertext values).
+	// 11. These three ciphertext values are concatenated to form a 24-byte value. This is the LM response.
+	des_encrypt(challenge, challengesz, desthree8 + 0*8, 8, response + 0*8, 8);
+	des_encrypt(challenge, challengesz, desthree8 + 1*8, 8, response + 1*8, 8);
+	des_encrypt(challenge, challengesz, desthree8 + 2*8, 8, response + 2*8, 8);
+	log("challenge", challenge, 8) << std::endl;
+	log("response 1", response + 0*8, 8);
+	log("response 2", response + 1*8, 8);
+	log("response 3", response + 2*8, 8) << std::endl;
 }
 
+//---------------------------------------------------------------------------
+//
 std::ostream& log(const char* name, const unsigned char* buf, size_t bufsz)
 {
-	std::cout << name << " = { ";
+	std::cout << std::setfill(' ') << std::left << std::setw(11) << name << " = { ";
 	for (size_t i = 0; i != bufsz; ++i)
 		std::cout << std::hex << std::setw(2) << std::setfill('0') << (unsigned)buf[i] << " ";
-	return std::cout << "}\n" << std::endl;
+	return std::cout << "}\n";
 }
 
+//---------------------------------------------------------------------------
+//
 void set_password(const char* in, unsigned char* out, size_t outsz)
 {
 	memset(out, 0, outsz);
@@ -76,6 +129,8 @@ void set_password(const std::string& in, unsigned char* out, size_t outsz)
 	set_password(in.c_str(), out, outsz);
 }
 
+//---------------------------------------------------------------------------
+// unused
 bool des_create1(const unsigned char* part, size_t partsz, unsigned char* out, size_t outsz)
 {
 	//	for each byte
@@ -126,6 +181,8 @@ bool des_create1(const unsigned char* part, size_t partsz, unsigned char* out, s
 	return true;
 }
 
+//---------------------------------------------------------------------------
+//
 namespace
 {
 	std::vector<bool> to_vec(const unsigned char* in, size_t insz)
@@ -197,6 +254,8 @@ bool des_create(const unsigned char* in, size_t insz, unsigned char* out, size_t
 	return true;
 }
 
+//---------------------------------------------------------------------------
+//
 void save(const unsigned char* buf, size_t bufsz, const char* filename)
 {
 	std::ofstream f(filename, std::ios::binary | std::ios::trunc);
@@ -208,6 +267,8 @@ void save(const unsigned char* buf, size_t bufsz, const std::string& filename)
 	save(buf, bufsz, filename.c_str());
 }
 
+//---------------------------------------------------------------------------
+//
 namespace
 {
 	extern "C"
@@ -473,8 +534,6 @@ namespace
 
 			unsigned char initial_permutation[8];
 			memset(initial_permutation, 0, 8);
-			printf("message_piece=%p\n", (void*)message_piece);
-			printf("processes_piece=%p\n", (void*)processed_piece);
 			memset(processed_piece, 0, 8);
 
 			for (i=0; i<64; i++) {
@@ -654,12 +713,10 @@ void des_encrypt(
 		const unsigned char* key,   size_t keysz, 
 		      unsigned char* out,   size_t outsz)
 {
-	assert(plainsz == 8);
-	assert(keysz == 8);
-	assert(outsz == 8);
+	assert(plain);	assert(plainsz == 8);
+	assert(key);	assert(keysz == 8);
+	assert(out);	assert(outsz == 8);
 
-	printf("plain=%p\n", (void*)plain);
-	printf("out=%p\n", (void*)out);
 	key_set key_sets[17];
 	generate_sub_keys(key, key_sets);
 	process_message(plain, out, key_sets, ENCRYPTION_MODE);
