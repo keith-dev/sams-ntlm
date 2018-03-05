@@ -1,10 +1,9 @@
 PROG_CXX   = testDes
 SRCS_CXX   = main.cc
-#SRCS       = des.c
 
-CFLAGS     ?= -g -pthread -Wall -Wextra -I/usr/local/include
-CXXFLAGS   ?= -g -std=c++98 -pedantic -pthread -Wall -Wextra -I/usr/local/include
-LDFLAGS     = 
+CFLAGS     = -g -pthread -Wall -Wextra -I/usr/local/include
+CXXFLAGS   = -g -std=c++98 -pedantic -pthread -Wall -Wextra -I/usr/local/include
+LDFLAGS    = -lcrypto
 
 all: $(PROG_CXX)
 

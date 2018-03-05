@@ -4,6 +4,6 @@ NO_MAN     = noman
 
 CFLAGS     = -g -pthread -Wall -Wextra -I/usr/local/include
 CXXFLAGS   = -g -std=c++98 -pedantic -pthread -Wall -Wextra -I/usr/local/include
-LDFLAGS    = 
+LDFLAGS    = -lcrypto
 
 .include <bsd.prog.mk>
